@@ -1,4 +1,4 @@
-// pose_painter.dart
+//mobile\lib\presentation\workout\pose_painter.dart
 import 'package:flutter/material.dart';
 import 'package:google_mlkit_pose_detection/google_mlkit_pose_detection.dart';
 import 'package:camera/camera.dart';

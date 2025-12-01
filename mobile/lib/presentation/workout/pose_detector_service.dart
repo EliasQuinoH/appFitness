@@ -1,7 +1,6 @@
 // lib/presentation/workout/pose_detector_service.dart
 import 'dart:io';
 //import 'dart:ui';
-
 import 'package:camera/camera.dart';
 import 'package:flutter/services.dart';
 import 'package:google_mlkit_pose_detection/google_mlkit_pose_detection.dart';
@@ -9,7 +8,10 @@ import 'package:google_mlkit_pose_detection/google_mlkit_pose_detection.dart';
 
 class PoseDetectorService {
   final PoseDetector _poseDetector = PoseDetector(
-    options: PoseDetectorOptions(mode: PoseDetectionMode.stream),
+    options: PoseDetectorOptions(
+      model: PoseDetectionModel.accurate, // <-- ACTIVA 3D
+      mode: PoseDetectionMode.stream,
+    ),
   );
 
   /// Convierte CameraImage a InputImage compatible con ML Kit

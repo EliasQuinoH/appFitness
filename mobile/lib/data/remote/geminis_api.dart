@@ -1,68 +1,28 @@
 //mobile\lib\data\remote\geminis_api.dart
-import 'dart:convert';
-import 'package:http/http.dart' as http;
-import '../../data/local/database.dart'; // Asegúrate de importar la base de datos
+import 'package:flutter/foundation.dart';
+import 'package:google_generative_ai/google_generative_ai.dart';
 
 class GeminiAPI {
-  static const String _endpoint =
-      "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent";
-  static const String _apiKey = "AIzaSyCBKq70Sw_pgdrlTssGCKuFyOR_meZUAuU";
+  static const String _apiKey = "AIzaSyD5QGz1jzx8KeQ7yxoSy89s99UwYGLQTsY";
 
-  /// Genera una rutina de ejercicios según el perfil del usuario
-  static Future<String?> generateRoutine({
-    required double weight,
-    required double height,
-    int? age,
-    String? issues,
-    String? pains,
-    required List<ExerciseTableData>
-    exercises, // Usamos la clase ExerciseTableData para los ejercicios
-  }) async {
-    // Generamos la lista de ejercicios disponibles para incluirlos en el prompt
-    final exerciseList = exercises.map((e) => e.name).join(", ");
+  static late final GenerativeModel _model;
 
-    // Creamos el prompt para la API de Gemini incluyendo los ejercicios disponibles
-    final prompt =
-        """
-Usuario con peso ${weight}kg, altura ${height}cm, edad ${age ?? 'N/A'}.
-Enfermedades: ${issues ?? 'ninguna'}.
-Dolores: ${pains ?? 'ninguno'}.
-Genera una rutina de ejercicios con los siguientes ejercicios: $exerciseList.
-Incluye repeticiones y series para cada ejercicio.
-""";
+  /// Inicializa el modelo (llamar solo una vez en main)
+  static void initialize() {
+    _model = GenerativeModel(
+      model: 'gemini-2.5-flash', // o gemini-2.5-flash si lo tienes habilitado
+      apiKey: _apiKey,
+    );
+    debugPrint("GeminiAPI inicializado correctamente.");
+  }
 
-    final body = jsonEncode({
-      "contents": [
-        {
-          "parts": [
-            {"text": prompt},
-          ],
-        },
-      ],
-    });
-
+  /// Enviar prompt y obtener respuesta
+  static Future<String?> generate(String prompt) async {
     try {
-      final response = await http.post(
-        Uri.parse(_endpoint),
-        headers: {
-          "Content-Type": "application/json",
-          "X-goog-api-key": _apiKey,
-        },
-        body: body,
-      );
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        // El texto generado normalmente está aquí:
-        final outputText = data['candidates']?[0]?['content']?[0]?['text'];
-        return outputText?.toString();
-      } else {
-        print("Error Gemini API: ${response.statusCode}");
-        print(response.body);
-        return null;
-      }
+      final response = await _model.generateContent([Content.text(prompt)]);
+      return response.text?.trim();
     } catch (e) {
-      print("Excepción al llamar Gemini API: $e");
+      debugPrint("❌ Error en Gemini: $e");
       return null;
     }
   }

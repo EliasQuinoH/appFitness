@@ -118,11 +118,11 @@ class _WorkoutStartPageState extends State<WorkoutStartPage>
   // LISTA DE EJERCICIOS
   Widget _buildExerciseList() {
     final ejercicios = [
-      "Sentadillas",
-      "Flexiones",
-      "Abdominales",
-      "Saltos de Tijera",
-      "Plancha",
+      "sentadillas",
+      "flexiones",
+      "abdominales",
+      "jumping jacks",
+      "plancha",
     ];
 
     return ListView.builder(

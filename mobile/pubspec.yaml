@@ -50,6 +50,7 @@ dependencies:
   google_mlkit_commons: ^0.11.0
 
   http: ^1.1.0   # Para hacer peticiones HTTP
+  google_generative_ai: ^0.4.7 
 
 dev_dependencies:
   # === Herramientas de Desarrollo ===

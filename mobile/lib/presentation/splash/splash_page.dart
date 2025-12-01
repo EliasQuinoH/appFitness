@@ -3,11 +3,13 @@ import 'package:flutter/material.dart';
 import 'package:lottie/lottie.dart';
 import 'package:audioplayers/audioplayers.dart';
 
-import '../onboarding/user_profile_form_page.dart';
+//import '../onboarding/user_profile_form_page.dart';
 import '../../data/local/database.dart'; // IMPORTANTE
 import '../home/home_page.dart'; // A donde navega si ya hay usuario
 import '../../main.dart'; // para usar appDatabase
 import '../onboarding/system_prompt_page.dart';
+
+import '../../presentation/online/splash_online_page.dart'; //online
 
 class SplashPage extends StatefulWidget {
   const SplashPage({super.key});
@@ -135,6 +137,28 @@ class _SplashPageState extends State<SplashPage> with TickerProviderStateMixin {
                       offset: Offset(0, 0),
                     ),
                   ],
+                ),
+              ),
+            ),
+          ),
+          // Codigo nuevo
+          Positioned(
+            bottom: 50,
+            left: 0,
+            right: 0,
+            child: TextButton(
+              onPressed: () {
+                Navigator.pushReplacement(
+                  context,
+                  MaterialPageRoute(builder: (_) => const SplashOnlinePage()),
+                );
+              },
+              child: const Text(
+                "Usar versión Online",
+                style: TextStyle(
+                  color: Colors.purpleAccent,
+                  fontSize: 16,
+                  decoration: TextDecoration.underline,
                 ),
               ),
             ),
