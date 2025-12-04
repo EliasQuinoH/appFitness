@@ -37,6 +37,10 @@ class _MlKitOnlinePageState extends State<MlKitOnlinePage> {
   List<Map<String, dynamic>> _analisisLista = [];
   List<String> _correcciones = [];
 
+  DateTime? _ultimaRepeticion;
+  int _minimoSegundosEntreRepeticiones =
+      2; // 2 segundos mínimo entre repeticiones
+
   @override
   void initState() {
     super.initState();
@@ -82,6 +86,12 @@ class _MlKitOnlinePageState extends State<MlKitOnlinePage> {
     _isBusy = false;
   }
 
+  // Agregar estas variables en _MlKitOnlinePageState:
+  Map<String, dynamic> _analisisAnterior = {};
+  bool _estabaEnPosicionBaja = false;
+  int _frameCount = 0;
+
+  /*
   Future<void> _analizarPose(List<Pose> poses) async {
     Map<String, dynamic> analisis;
 
@@ -106,6 +116,19 @@ class _MlKitOnlinePageState extends State<MlKitOnlinePage> {
       _repeticiones++;
       _puntuacionTotal += (analisis['puntuacion'] as num).toInt();
 
+      // Mostrar feedback visual
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              '✅ Repetición $_repeticiones - Puntuación: ${analisis['puntuacion']}',
+            ),
+            backgroundColor: Colors.green,
+            duration: const Duration(seconds: 1),
+          ),
+        );
+      }
+
       // Guardar análisis para enviar al backend
       _analisisLista.add({
         'timestamp': DateTime.now().toIso8601String(),
@@ -125,6 +148,141 @@ class _MlKitOnlinePageState extends State<MlKitOnlinePage> {
       }
 
       if (mounted) setState(() {});
+    }
+  }
+*/
+  Future<void> _analizarPose(List<Pose> poses) async {
+    print('=== ANÁLISIS FRAME ===');
+    print('Ejercicio: ${widget.tipoEjercicio}');
+    print('Poses detectadas: ${poses.length}');
+    print('Analizando: $_isAnalizando');
+
+    if (!_isAnalizando || poses.isEmpty) return;
+
+    Map<String, dynamic> analisis;
+
+    // Seleccionar analizador según tipo de ejercicio
+    switch (widget.tipoEjercicio.toLowerCase()) {
+      case 'sentadilla':
+        analisis = PoseAnalyzer.analizarSentadilla(poses);
+        print('Ángulo rodillas: ${analisis['angulo_rodillas']}');
+        print('En posición baja: ${analisis['en_posicion_baja']}');
+        print('Precisión: ${analisis['precision']}');
+        break;
+      case 'flexiones':
+        analisis = PoseAnalyzer.analizarFlexiones(poses);
+        break;
+      default:
+        analisis = {
+          'puntuacion': 80,
+          'precision': 0.7,
+          'correcciones': [],
+          'en_posicion_baja': false,
+        };
+    }
+
+    if (analisis.containsKey('error')) {
+      print('Error en análisis: ${analisis['error']}');
+      return;
+    }
+
+    // Solo contar si hay buena precisión
+    if ((analisis['precision'] ?? 0.0) < 0.5) {
+      print('Precisión baja: ${analisis['precision']}');
+      return;
+    }
+
+    // DETECCIÓN DE REPETICIONES (solo para sentadillas)
+    if (widget.tipoEjercicio.toLowerCase() == 'sentadilla') {
+      _frameCount++;
+
+      // Solo procesar cada 10 frames para evitar contar múltiples veces
+      if (_frameCount % 10 == 0 && _analisisAnterior.isNotEmpty) {
+        final estaEnPosicionBaja = analisis['en_posicion_baja'] ?? false;
+        final anguloActual = analisis['angulo_rodillas'] ?? 180.0;
+
+        // En _MlKitOnlinePageState, agregar:
+
+        // Detectar repetición: estaba bajo → ahora alto
+        // Modificar la detección de repeticiones:
+        if (_estabaEnPosicionBaja && !estaEnPosicionBaja) {
+          // Verificar tiempo mínimo entre repeticiones
+          final ahora = DateTime.now();
+          if (_ultimaRepeticion != null) {
+            final diferencia = ahora.difference(_ultimaRepeticion!).inSeconds;
+            if (diferencia < _minimoSegundosEntreRepeticiones) {
+              print('Repetición muy rápida, ignorando ($diferencia segundos)');
+              return;
+            }
+          }
+          // Verificar que fue una sentadilla válida (ángulo menor a 120°)
+          final anguloMinimo = _analisisAnterior['angulo_rodillas'] ?? 180.0;
+          if (anguloMinimo < 120) {
+            _repeticiones++;
+            _ultimaRepeticion = ahora;
+            final puntuacion = analisis['puntuacion'] ?? 70;
+            _puntuacionTotal += (puntuacion as num).toInt();
+
+            // Mostrar feedback visual
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(
+                    '✅ Repetición $_repeticiones - Puntuación: $puntuacion',
+                  ),
+                  backgroundColor: Colors.green,
+                  duration: const Duration(seconds: 1),
+                ),
+              );
+            }
+
+            // Guardar análisis para enviar al backend
+            _analisisLista.add({
+              //'timestamp': DateTime.now().toIso8601String(),
+              'timestamp': ahora.toIso8601String(),
+              'puntos_corporales': PoseAnalyzer.poseToJson(poses.first),
+              'puntuacion': puntuacion,
+              'precision': analisis['precision'],
+              'angulo': anguloMinimo,
+            });
+
+            if (mounted) setState(() {});
+          }
+        }
+
+        // Actualizar estado anterior
+        _estabaEnPosicionBaja = estaEnPosicionBaja;
+      }
+
+      // Guardar análisis actual para siguiente frame
+      _analisisAnterior = Map.from(analisis);
+    } else {
+      // Para otros ejercicios, usar lógica simple
+      final puntuacion = analisis['puntuacion'] ?? 70;
+      if (puntuacion >= 70) {
+        _repeticiones++;
+        _puntuacionTotal += (puntuacion as num).toInt();
+
+        // Guardar análisis
+        _analisisLista.add({
+          'timestamp': DateTime.now().toIso8601String(),
+          'puntos_corporales': PoseAnalyzer.poseToJson(poses.first),
+          'puntuacion': puntuacion,
+          'precision': analisis['precision'],
+        });
+
+        if (mounted) setState(() {});
+      }
+    }
+
+    // Agregar correcciones si hay
+    if (analisis['correcciones'] is List) {
+      final nuevasCorrecciones = List<String>.from(analisis['correcciones']);
+      for (final correccion in nuevasCorrecciones) {
+        if (!_correcciones.contains(correccion)) {
+          _correcciones.add(correccion);
+        }
+      }
     }
   }
 
@@ -259,6 +417,39 @@ class _MlKitOnlinePageState extends State<MlKitOnlinePage> {
     }
   }
 
+  Future<void> _cambiarCamara() async {
+    if (_isAnalizando) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Pausa el análisis antes de cambiar cámara'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    // Detener stream actual
+    await _cameraService.stopImageStream();
+
+    // Obtener nueva dirección de cámara
+    final currentDirection =
+        _cameraService.controller!.description.lensDirection;
+    final newDirection = currentDirection == CameraLensDirection.front
+        ? CameraLensDirection.back
+        : CameraLensDirection.front;
+
+    // Re-inicializar con nueva cámara
+    await _cameraService.initializeCamera(
+      preferredDirection: newDirection,
+      resolution: ResolutionPreset.high,
+    );
+
+    // Re-iniciar stream
+    _cameraService.startImageStream(_processCameraImage);
+
+    if (mounted) setState(() {});
+  }
+
   void _toggleAnalisis() {
     setState(() {
       _isAnalizando = !_isAnalizando;
@@ -268,7 +459,7 @@ class _MlKitOnlinePageState extends State<MlKitOnlinePage> {
     });
   }
 
-  void _reiniciarSesion() {
+  /*void _reiniciarSesion() {
     setState(() {
       _repeticiones = 0;
       _puntuacionTotal = 0;
@@ -276,6 +467,27 @@ class _MlKitOnlinePageState extends State<MlKitOnlinePage> {
       _correcciones.clear();
       _isAnalizando = false;
     });
+  }*/
+
+  void _reiniciarSesion() {
+    setState(() {
+      _repeticiones = 0;
+      _puntuacionTotal = 0;
+      _analisisLista.clear();
+      _correcciones.clear();
+      _isAnalizando = false;
+      _analisisAnterior = {};
+      _estabaEnPosicionBaja = false;
+      _frameCount = 0;
+      _ultimaRepeticion = null;
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Sesión reiniciada'),
+        backgroundColor: Colors.orange,
+      ),
+    );
   }
 
   @override
@@ -286,7 +498,7 @@ class _MlKitOnlinePageState extends State<MlKitOnlinePage> {
   }
 
   // En lib/presentacion/online/mlkit_online_page.dart, actualizar el método build():
-
+  /*
   @override
   Widget build(BuildContext context) {
     final controller = _cameraService.controller;
@@ -578,6 +790,230 @@ class _MlKitOnlinePageState extends State<MlKitOnlinePage> {
               ),
             ),
           ),
+        ],
+      ),
+    );
+  }
+
+*/
+
+  @override
+  Widget build(BuildContext context) {
+    final controller = _cameraService.controller;
+    if (controller == null || !controller.value.isInitialized) {
+      return Scaffold(
+        backgroundColor: Colors.black,
+        body: const Center(
+          child: CircularProgressIndicator(color: Colors.purpleAccent),
+        ),
+      );
+    }
+
+    final puntuacionPromedio = _repeticiones > 0
+        ? (_puntuacionTotal / _repeticiones).round()
+        : 0;
+
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: Stack(
+        children: [
+          // 1. CÁMARA
+          Positioned.fill(child: CameraPreview(controller)),
+
+          // 2. DETECCIÓN DE POSES
+          CustomPaint(
+            painter: PosePainter(
+              _poses,
+              _cameraService.previewSize,
+              InputImageRotation.rotation0deg,
+              controller.description.lensDirection,
+            ),
+            child: Container(),
+          ),
+
+          // 3. HEADER SUPERIOR SIMPLE
+          Positioned(
+            top: 40,
+            left: 0,
+            right: 0,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+              color: Colors.black.withOpacity(0.6),
+              child: Column(
+                children: [
+                  Text(
+                    widget.ejercicio,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+
+                  // CONTADORES SIMPLES
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: [
+                      // Repeticiones
+                      Column(
+                        children: [
+                          const Text(
+                            'REP',
+                            style: TextStyle(
+                              color: Colors.white70,
+                              fontSize: 12,
+                            ),
+                          ),
+                          Text(
+                            '$_repeticiones',
+                            style: const TextStyle(
+                              color: Colors.purpleAccent,
+                              fontSize: 28,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+
+                      // Puntuación
+                      Column(
+                        children: [
+                          const Text(
+                            'PUNT',
+                            style: TextStyle(
+                              color: Colors.white70,
+                              fontSize: 12,
+                            ),
+                          ),
+                          Text(
+                            '$puntuacionPromedio',
+                            style: TextStyle(
+                              color: _getColorForScore(puntuacionPromedio),
+                              fontSize: 28,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+
+                      // Estado
+                      Column(
+                        children: [
+                          const Text(
+                            'ESTADO',
+                            style: TextStyle(
+                              color: Colors.white70,
+                              fontSize: 12,
+                            ),
+                          ),
+                          Icon(
+                            _isAnalizando ? Icons.play_arrow : Icons.pause,
+                            color: _isAnalizando ? Colors.green : Colors.orange,
+                            size: 28,
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          // 4. BOTÓN CAMBIAR CÁMARA (ESQUINA SUPERIOR DERECHA)
+          Positioned(
+            top: 50,
+            right: 20,
+            child: GestureDetector(
+              onTap: _cambiarCamara,
+              child: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.black.withOpacity(0.6),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: Colors.white, width: 1),
+                ),
+                child: const Icon(
+                  Icons.cameraswitch,
+                  color: Colors.white,
+                  size: 30,
+                ),
+              ),
+            ),
+          ),
+
+          // 5. BOTONES DE CONTROL INFERIORES
+          Positioned(
+            bottom: 30,
+            left: 0,
+            right: 0,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  // BOTÓN INICIAR/PAUSAR
+                  _buildControlButton(
+                    icon: _isAnalizando ? Icons.pause : Icons.play_arrow,
+                    label: _isAnalizando ? 'PAUSAR' : 'INICIAR',
+                    color: _isAnalizando ? Colors.red : Colors.green,
+                    onPressed: _toggleAnalisis,
+                  ),
+
+                  // BOTÓN REINICIAR
+                  _buildControlButton(
+                    icon: Icons.refresh,
+                    label: 'REINICIAR',
+                    color: Colors.orange,
+                    onPressed: _reiniciarSesion,
+                  ),
+
+                  // BOTÓN ENVIAR/SALIR
+                  _buildControlButton(
+                    icon: Icons.cloud_upload,
+                    label: _repeticiones > 0 ? 'ENVIAR' : 'SALIR',
+                    color: _repeticiones > 0 ? Colors.blue : Colors.grey,
+                    onPressed: () async {
+                      if (_repeticiones > 0) {
+                        await _enviarResultadosAlBackend();
+                      } else {
+                        Navigator.pop(context);
+                      }
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          // 6. FEEDBACK VISUAL (SOLO CUANDO ANALIZA)
+          if (_isAnalizando && _poses.isNotEmpty)
+            Positioned(
+              bottom: 120,
+              left: 0,
+              right: 0,
+              child: Center(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 20,
+                    vertical: 10,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.green.withOpacity(0.7),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: const Text(
+                    '✓ POSE DETECTADA',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                    ),
+                  ),
+                ),
+              ),
+            ),
         ],
       ),
     );
