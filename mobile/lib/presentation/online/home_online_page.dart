@@ -18,6 +18,7 @@ import '../online/login_online_page.dart';
 import '../online/profile_online_page.dart';
 import '../online/misiones_online_page.dart';
 import '../online/statistics_online_page.dart';
+import '../online/workout_online_page.dart';
 
 class HomeOnlinePage extends StatefulWidget {
   final UserModel user;
@@ -270,7 +271,8 @@ class _HomeOnlinePageState extends State<HomeOnlinePage> {
                         onTap: () => Navigator.push(
                           context,
                           MaterialPageRoute(
-                            builder: (_) => const WorkoutStartPage(),
+                            //builder: (_) => const WorkoutStartPage(),
+                            builder: (_) => const WorkoutOnlinePage(),
                           ),
                         ),
                       ),

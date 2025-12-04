@@ -5,7 +5,7 @@ import 'dart:math' as math;
 
 class PoseAnalyzer {
   // Convertir poses de MLKit a formato para el backend
-  static Map<String, dynamic> poseToJson(Pose pose) {
+  /*static Map<String, dynamic> poseToJson(Pose pose) {
     final Map<String, dynamic> jsonPose = {};
 
     pose.landmarks.forEach((type, landmark) {
@@ -16,6 +16,30 @@ class PoseAnalyzer {
         'likelihood': landmark.likelihood,
       };
     });
+
+    return jsonPose;
+  }*/
+
+  static Map<String, dynamic> poseToJson(Pose pose) {
+    final Map<String, dynamic> jsonPose = {'landmarks': {}, 'keypoints': []};
+
+    // Convertir landmarks
+    pose.landmarks.forEach((type, landmark) {
+      jsonPose['landmarks'][type.name] = {
+        'x': landmark.x,
+        'y': landmark.y,
+        'z': landmark.z,
+        'likelihood': landmark.likelihood,
+      };
+    });
+
+    // Crear array plano de keypoints [x1, y1, x2, y2, ...]
+    final List<double> keypoints = [];
+    pose.landmarks.forEach((_, landmark) {
+      keypoints.add(landmark.x);
+      keypoints.add(landmark.y);
+    });
+    jsonPose['keypoints'] = keypoints;
 
     return jsonPose;
   }
@@ -44,7 +68,7 @@ class PoseAnalyzer {
   }
 
   // Analizar técnica de sentadilla
-  static Map<String, dynamic> analizarSentadilla(List<Pose> poses) {
+  /*static Map<String, dynamic> analizarSentadilla(List<Pose> poses) {
     if (poses.isEmpty) return {'error': 'No se detectó pose'};
 
     final pose = poses.first;
@@ -114,6 +138,131 @@ class PoseAnalyzer {
               .reduce((a, b) => a + b) /
           pose.landmarks.length,
     };
+  }
+*/
+  static Map<String, dynamic> analizarSentadilla(List<Pose> poses) {
+    if (poses.isEmpty) return {'error': 'No se detectó pose'};
+
+    final pose = poses.first;
+    final landmarks = pose.landmarks;
+
+    // Puntos clave necesarios
+    final caderaIzq = landmarks[PoseLandmarkType.leftHip];
+    final rodillaIzq = landmarks[PoseLandmarkType.leftKnee];
+    final tobilloIzq = landmarks[PoseLandmarkType.leftAnkle];
+    final caderaDer = landmarks[PoseLandmarkType.rightHip];
+    final rodillaDer = landmarks[PoseLandmarkType.rightKnee];
+    final tobilloDer = landmarks[PoseLandmarkType.rightAnkle];
+    final hombroIzq = landmarks[PoseLandmarkType.leftShoulder];
+    final hombroDer = landmarks[PoseLandmarkType.rightShoulder];
+
+    // Verificar que tenemos todos los puntos
+    if (caderaIzq == null ||
+        rodillaIzq == null ||
+        tobilloIzq == null ||
+        caderaDer == null ||
+        rodillaDer == null ||
+        tobilloDer == null) {
+      return {'error': 'Faltan puntos clave de piernas'};
+    }
+
+    // Calcular ángulos
+    final anguloRodillaIzq = calcularAngulo(caderaIzq, rodillaIzq, tobilloIzq);
+    final anguloRodillaDer = calcularAngulo(caderaDer, rodillaDer, tobilloDer);
+    final anguloPromedio = (anguloRodillaIzq + anguloRodillaDer) / 2;
+
+    // Calcular altura relativa (para detectar movimiento)
+    final alturaPromedio = (rodillaIzq.y + rodillaDer.y) / 2;
+
+    // Evaluar técnica
+    int puntuacion = 100;
+    final List<String> correcciones = [];
+
+    // Detectar si está en posición baja (sentadilla)
+    final enPosicionBaja =
+        anguloPromedio < 120; // Ángulo menor a 120° = sentadilla
+
+    // Verificar rango de movimiento
+    if (anguloPromedio > 170) {
+      puntuacion -= 10;
+      correcciones.add('Piernas muy extendidas');
+    } else if (anguloPromedio < 60) {
+      puntuacion -= 15;
+      correcciones.add('Sentadilla muy profunda');
+    }
+
+    // Verificar alineación de rodillas
+    final diferenciaRodillasX = (rodillaIzq.x - rodillaDer.x).abs();
+    final diferenciaRodillasY = (rodillaIzq.y - rodillaDer.y).abs();
+
+    if (diferenciaRodillasX > 50) {
+      puntuacion -= 20;
+      correcciones.add('Rodillas desalineadas horizontalmente');
+    }
+
+    if (diferenciaRodillasY > 30) {
+      puntuacion -= 15;
+      correcciones.add('Rodillas a diferente altura');
+    }
+
+    // Verificar espalda recta
+    if (hombroIzq != null && hombroDer != null) {
+      final diferenciaHombrosY = (hombroIzq.y - hombroDer.y).abs();
+      if (diferenciaHombrosY > 20) {
+        puntuacion -= 10;
+        correcciones.add('Hombros desnivelados');
+      }
+    }
+
+    // Calcular precisión general
+    double precision = 0.0;
+    int landmarksValidos = 0;
+
+    landmarks.forEach((_, landmark) {
+      if (landmark.likelihood > 0.3) {
+        precision += landmark.likelihood;
+        landmarksValidos++;
+      }
+    });
+
+    precision = landmarksValidos > 0 ? precision / landmarksValidos : 0.0;
+
+    return {
+      'puntuacion': puntuacion.clamp(0, 100),
+      'angulo_rodillas': anguloPromedio,
+      'en_posicion_baja': enPosicionBaja,
+      'altura_promedio': alturaPromedio,
+      'correcciones': correcciones,
+      'precision': precision,
+      'landmarks_detectados': landmarksValidos,
+    };
+  }
+
+  // Método para detectar repetición de sentadilla
+  static bool detectarRepeticionSentadilla(
+    Map<String, dynamic> analisisAnterior,
+    Map<String, dynamic> analisisActual,
+  ) {
+    // Si no tenemos análisis anterior, no es repetición
+    if (analisisAnterior.isEmpty) return false;
+
+    final estabaBajoAnterior = analisisAnterior['en_posicion_baja'] ?? false;
+    final estaBajoActual = analisisActual['en_posicion_baja'] ?? false;
+    final anguloAnterior = analisisAnterior['angulo_rodillas'] ?? 180.0;
+    final anguloActual = analisisActual['angulo_rodillas'] ?? 180.0;
+
+    // Detectar ciclo: estaba arriba → bajó → volvió arriba
+    if (!estabaBajoAnterior && estaBajoActual) {
+      // Comenzó a bajar
+      return false;
+    } else if (estabaBajoAnterior && !estaBajoActual) {
+      // Subió después de estar abajo - POSIBLE REPETICIÓN
+      // Verificar que haya hecho un movimiento significativo
+      final diferenciaAngulo = (anguloAnterior - anguloActual).abs();
+      return diferenciaAngulo > 30; // Movimiento mínimo de 30°
+    }
+
+    return false;
   }
 
   // Analizar técnica de flexiones
